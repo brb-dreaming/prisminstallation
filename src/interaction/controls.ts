@@ -588,6 +588,30 @@ export class InteractionController {
   }
   
   /**
+   * Select a specific object programmatically
+   */
+  selectObject(object: DraggableObject): void {
+    // Deselect previous
+    if (this.selectedObject && this.selectedObject !== object) {
+      if (this.selectedObject instanceof Prism) {
+        this.selectedObject.setSelected(false);
+      } else {
+        this.selectedObject.setSelected(false);
+      }
+    }
+    
+    // Select new object
+    this.selectedObject = object;
+    if (object instanceof Prism) {
+      object.setSelected(true);
+      this.onPrismSelected?.(object);
+    } else {
+      object.setSelected(true);
+    }
+    this.onObjectSelected?.(object);
+  }
+  
+  /**
    * Get currently selected prism (for backwards compatibility)
    */
   getSelectedPrism(): Prism | null {

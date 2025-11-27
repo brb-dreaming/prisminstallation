@@ -327,6 +327,10 @@ class PrismSimulator {
       this.resetSplitterToOptimalAngle();
     };
     
+    this.ui.onWallWidthChange = (width) => {
+      this.setSelectedWallWidth(width);
+    };
+    
     // Initialize saved configs list
     this.ui.updateSavedConfigsList(getSavedConfigNames());
     
@@ -363,8 +367,8 @@ class PrismSimulator {
     // Reset splitter to default rotation
     this.splitterPrism.setRotation(Math.PI / 6);
     
-    // Update optical system
-    this.opticalSystem.setPrisms([]);
+    // Update optical system - must include splitter prism for ray tracing
+    this.opticalSystem.setPrisms([this.splitterPrism]);
     this.opticalSystem.setWalls([]);
     this.controls.setPrisms([this.splitterPrism]);
     this.controls.setWalls([]);
@@ -495,8 +499,8 @@ class PrismSimulator {
       this.controls.addWall(wall);
     }
     
-    // Update optical system
-    this.opticalSystem.setPrisms(this.directorPrisms);
+    // Update optical system - must include splitter prism for ray tracing
+    this.opticalSystem.setPrisms([this.splitterPrism, ...this.directorPrisms]);
     this.opticalSystem.setWalls(this.walls);
     this.controls.setPrisms([this.splitterPrism, ...this.directorPrisms]);
     this.controls.setWalls(this.walls);
@@ -554,8 +558,8 @@ class PrismSimulator {
   private addNewPrism(): void {
     this.prismCounter++;
     
-    // Find a free grid position (spiral outward from center)
-    const position = this.findFreeGridPosition();
+    // Find a position near the selected object, or use default search
+    const position = this.findSpawnPosition();
     
     // Create prism with a neutral target wavelength
     const prism = createDirectorPrism(
@@ -576,6 +580,9 @@ class PrismSimulator {
     this.controls.addPrism(prism);
     this.opticalSystem.addPrism(prism);
     
+    // Select the new prism
+    this.controls.selectObject(prism);
+    
     // Update rays
     this.needsRayUpdate = true;
     
@@ -586,8 +593,8 @@ class PrismSimulator {
    * Add a new wall to the scene
    */
   private addNewWall(): void {
-    // Find a free grid position
-    const position = this.findFreeGridPosition();
+    // Find a position near the selected object, or use default search
+    const position = this.findSpawnPosition();
     
     const wall = createWall(position, {
       width: 2,
@@ -601,10 +608,80 @@ class PrismSimulator {
     this.controls.addWall(wall);
     this.opticalSystem.setWalls(this.walls);
     
+    // Select the new wall
+    this.controls.selectObject(wall);
+    
     // Update rays
     this.needsRayUpdate = true;
     
     console.log(`Added new wall at position (${position.x}, ${position.z})`);
+  }
+  
+  /**
+   * Find a spawn position - near selected object if one exists, otherwise default search
+   */
+  private findSpawnPosition(): THREE.Vector3 {
+    const selected = this.controls.getSelectedObject();
+    
+    if (selected) {
+      // Get position near the selected object
+      const selectedPos = selected.mesh.position;
+      return this.findFreePositionNear(selectedPos);
+    }
+    
+    // No selection, use default grid search
+    return this.findFreeGridPosition();
+  }
+  
+  /**
+   * Find a free position near a given position
+   */
+  private findFreePositionNear(centerPos: THREE.Vector3): THREE.Vector3 {
+    const gridSize = this.environmentConfig.gridSize;
+    const baseY = 5;
+    
+    // Collect all occupied positions
+    const occupied = new Set<string>();
+    occupied.add(this.positionKey(this.splitterPrism.mesh.position));
+    for (const prism of this.directorPrisms) {
+      occupied.add(this.positionKey(prism.mesh.position));
+    }
+    for (const wall of this.walls) {
+      occupied.add(this.positionKey(wall.mesh.position));
+    }
+    
+    // Check adjacent positions in a spiral pattern around the center
+    // Check the 4 cardinal directions first, then diagonals, then expand outward
+    const directions = [
+      { dx: 1, dz: 0 },   // Right
+      { dx: -1, dz: 0 },  // Left
+      { dx: 0, dz: 1 },   // Forward
+      { dx: 0, dz: -1 },  // Back
+      { dx: 1, dz: 1 },   // Diagonal
+      { dx: 1, dz: -1 },
+      { dx: -1, dz: 1 },
+      { dx: -1, dz: -1 },
+    ];
+    
+    // Snap center to grid
+    const snappedX = Math.round(centerPos.x / gridSize) * gridSize;
+    const snappedZ = Math.round(centerPos.z / gridSize) * gridSize;
+    
+    // Try expanding rings around the center
+    for (let ring = 1; ring <= 10; ring++) {
+      for (const dir of directions) {
+        const x = snappedX + dir.dx * ring * gridSize;
+        const z = snappedZ + dir.dz * ring * gridSize;
+        const pos = new THREE.Vector3(x, baseY, z);
+        
+        if (!occupied.has(this.positionKey(pos))) {
+          return pos;
+        }
+      }
+    }
+    
+    // Fallback to default search if somehow all nearby positions are taken
+    return this.findFreeGridPosition();
   }
   
   /**
@@ -674,6 +751,18 @@ class PrismSimulator {
     this.splitterPrism.setRotation(optimalAngle);
     this.ui.updatePrismRotation(this.splitterPrism);
     this.needsRayUpdate = true;
+  }
+  
+  /**
+   * Set the width of the currently selected wall
+   */
+  private setSelectedWallWidth(width: number): void {
+    const selected = this.controls.getSelectedObject();
+    if (selected instanceof Wall) {
+      selected.setWidth(width);
+      this.ui.updateObjectSelection(selected);
+      this.needsRayUpdate = true;
+    }
   }
   
   /**

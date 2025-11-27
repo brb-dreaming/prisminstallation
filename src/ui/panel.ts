@@ -36,6 +36,7 @@ export class UIPanel {
   onModeChange: ((mode: InteractionMode) => void) | null = null;
   onAngleChange: ((angleDegrees: number) => void) | null = null;
   onResetSplitterAngle: (() => void) | null = null;
+  onWallWidthChange: ((width: number) => void) | null = null;
   
   // Config callbacks
   onSaveConfig: ((name: string) => void) | null = null;
@@ -603,6 +604,11 @@ export class UIPanel {
           <input type="number" id="angle-input" class="angle-input" value="${wall.getRotationDegrees().toFixed(1)}" min="0" max="360" step="0.1">
           <span class="angle-unit">°</span>
         </div>
+        <div class="wall-size-row">
+          <label>Length</label>
+          <input type="number" id="wall-width-input" class="wall-size-input" value="${wall.config.width.toFixed(1)}" min="0.5" max="20" step="0.5">
+          <span class="size-unit">cm</span>
+        </div>
         <div class="position">Position: (${posX}, ${posZ})</div>
         <div class="material">Solid obstruction</div>
       `;
@@ -621,6 +627,26 @@ export class UIPanel {
             const value = parseFloat((e.target as HTMLInputElement).value);
             if (!isNaN(value)) {
               this.onAngleChange?.(value);
+            }
+            (e.target as HTMLInputElement).blur();
+          }
+        });
+      }
+      
+      // Wire up wall width input
+      const widthInput = document.getElementById('wall-width-input') as HTMLInputElement;
+      if (widthInput) {
+        widthInput.addEventListener('change', (e) => {
+          const value = parseFloat((e.target as HTMLInputElement).value);
+          if (!isNaN(value) && value >= 0.5) {
+            this.onWallWidthChange?.(value);
+          }
+        });
+        widthInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            const value = parseFloat((e.target as HTMLInputElement).value);
+            if (!isNaN(value) && value >= 0.5) {
+              this.onWallWidthChange?.(value);
             }
             (e.target as HTMLInputElement).blur();
           }

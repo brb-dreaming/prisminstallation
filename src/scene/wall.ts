@@ -169,6 +169,45 @@ export class Wall {
   }
   
   /**
+   * Set wall width (length) and rebuild mesh
+   */
+  setWidth(width: number): void {
+    this.config.width = Math.max(0.5, Math.min(20, width));
+    this.rebuildMesh();
+  }
+  
+  /**
+   * Rebuild the mesh after dimension changes
+   */
+  private rebuildMesh(): void {
+    const { width, height, depth } = this.config;
+    
+    // Dispose old geometry
+    this.mesh.geometry.dispose();
+    
+    // Create new geometry
+    const geometry = new THREE.BoxGeometry(width, height, depth);
+    this.mesh.geometry = geometry;
+    
+    // Update selection ring if it exists
+    if (this.selectionRing) {
+      this.mesh.remove(this.selectionRing);
+      this.selectionRing.geometry.dispose();
+      (this.selectionRing.material as THREE.Material).dispose();
+      this.createSelectionIndicator();
+      
+      // Restore selection state
+      if (this.isSelected && this.selectionRing) {
+        this.selectionRing.visible = true;
+        const ringMaterial = this.selectionRing.material as THREE.LineBasicMaterial;
+        ringMaterial.opacity = 0.6;
+      }
+    }
+    
+    this.updateBoundingBox();
+  }
+  
+  /**
    * Visual feedback for selection state
    */
   setSelected(selected: boolean): void {
