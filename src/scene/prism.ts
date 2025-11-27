@@ -42,10 +42,44 @@ export class Prism {
   isSelected: boolean = false;
   isHovered: boolean = false;
   
+  // Selection indicator
+  private selectionRing: THREE.LineLoop | null = null;
+  
   constructor(config: PrismConfig) {
     this.config = { ...config };
     this.mesh = this.createMesh();
+    this.createSelectionIndicator();
     this.updateTriangles();
+  }
+  
+  /**
+   * Create a subtle ring indicator for selection state
+   */
+  private createSelectionIndicator(): void {
+    const { sideLength } = this.config;
+    const h = (sideLength * Math.sqrt(3)) / 2;
+    
+    // Create a triangular ring that follows the prism's base shape, slightly larger
+    const scale = 1.25;
+    const points = [
+      new THREE.Vector3(0, 0, h * 2/3 * scale),
+      new THREE.Vector3(-sideLength/2 * scale, 0, -h/3 * scale),
+      new THREE.Vector3(sideLength/2 * scale, 0, -h/3 * scale),
+      new THREE.Vector3(0, 0, h * 2/3 * scale), // Close the loop
+    ];
+    
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    const material = new THREE.LineBasicMaterial({
+      color: 0xd4af37, // Gold accent color
+      transparent: true,
+      opacity: 0,
+      linewidth: 1,
+    });
+    
+    this.selectionRing = new THREE.LineLoop(geometry, material);
+    this.selectionRing.position.y = -this.config.height / 2 - 0.1; // Just below the prism
+    this.selectionRing.visible = false;
+    this.mesh.add(this.selectionRing);
   }
   
   /**
@@ -383,9 +417,21 @@ export class Prism {
     this.isSelected = selected;
     const material = this.mesh.material as THREE.MeshPhysicalMaterial;
     if (selected) {
-      material.emissive = new THREE.Color(0x222222);
+      material.emissive = new THREE.Color(0x1a1a1a);
+      // Show and animate selection ring
+      if (this.selectionRing) {
+        this.selectionRing.visible = true;
+        const ringMaterial = this.selectionRing.material as THREE.LineBasicMaterial;
+        ringMaterial.opacity = 0.6;
+      }
     } else {
       material.emissive = new THREE.Color(0x000000);
+      // Hide selection ring
+      if (this.selectionRing) {
+        this.selectionRing.visible = false;
+        const ringMaterial = this.selectionRing.material as THREE.LineBasicMaterial;
+        ringMaterial.opacity = 0;
+      }
     }
   }
   

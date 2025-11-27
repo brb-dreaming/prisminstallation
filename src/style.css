@@ -154,6 +154,75 @@ html, body {
   font-weight: 400;
 }
 
+/* Angle Input Row */
+.angle-input-row {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  margin: 4px 0;
+}
+
+.angle-input {
+  width: 72px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--accent);
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 400;
+  padding: 4px 8px;
+  text-align: right;
+  transition: border-color 0.2s ease, background 0.2s ease;
+  -moz-appearance: textfield;
+}
+
+.angle-input::-webkit-outer-spin-button,
+.angle-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.angle-input:focus {
+  outline: none;
+  border-color: var(--accent-dim);
+  background: var(--bg-primary);
+}
+
+.angle-input:hover:not(:focus) {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.angle-unit {
+  color: var(--accent);
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 400;
+  opacity: 0.7;
+}
+
+.reset-angle-btn {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.reset-angle-btn:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--accent-dim);
+  color: var(--accent);
+}
+
 /* Convergence Meter */
 #convergence-meter {
   display: flex;

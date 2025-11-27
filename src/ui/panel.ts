@@ -34,6 +34,8 @@ export class UIPanel {
   onAddWall: (() => void) | null = null;
   onDeleteSelected: (() => void) | null = null;
   onModeChange: ((mode: InteractionMode) => void) | null = null;
+  onAngleChange: ((angleDegrees: number) => void) | null = null;
+  onResetSplitterAngle: (() => void) | null = null;
   
   // Config callbacks
   onSaveConfig: ((name: string) => void) | null = null;
@@ -483,7 +485,8 @@ export class UIPanel {
         deleteBtn.disabled = false;
       }
       
-      if ('config' in object && 'targetWavelength' in object.config) {
+      // Check for 'type' property which exists on all Prism configs ('splitter' or 'director')
+      if ('config' in object && 'type' in object.config && (object.config.type === 'splitter' || object.config.type === 'director')) {
         // It's a Prism
         this.updatePrismSelection(object as Prism);
       } else {
@@ -533,12 +536,49 @@ export class UIPanel {
       const posX = prism.config.position.x.toFixed(1);
       const posZ = prism.config.position.z.toFixed(1);
       
+      // Show reset button only for splitter prism
+      const resetButton = prism.config.type === 'splitter' 
+        ? `<button id="reset-splitter-angle" class="reset-angle-btn" title="Reset to 30° for maximum light refraction">Reset to optimal</button>`
+        : '';
+      
       this.prismInfoEl.innerHTML = `
         <div class="prism-name">${displayName} ${typeLabel}</div>
-        <div class="angle">${prism.getRotationDegrees().toFixed(1)}°</div>
+        <div class="angle-input-row">
+          <input type="number" id="angle-input" class="angle-input" value="${prism.getRotationDegrees().toFixed(1)}" min="0" max="360" step="0.1">
+          <span class="angle-unit">°</span>
+          ${resetButton}
+        </div>
         <div class="position">Position: (${posX}, ${posZ})</div>
         <div class="material">${prism.config.material.name}</div>
       `;
+      
+      // Wire up angle input
+      const angleInput = document.getElementById('angle-input') as HTMLInputElement;
+      if (angleInput) {
+        angleInput.addEventListener('change', (e) => {
+          const value = parseFloat((e.target as HTMLInputElement).value);
+          if (!isNaN(value)) {
+            this.onAngleChange?.(value);
+          }
+        });
+        angleInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            const value = parseFloat((e.target as HTMLInputElement).value);
+            if (!isNaN(value)) {
+              this.onAngleChange?.(value);
+            }
+            (e.target as HTMLInputElement).blur();
+          }
+        });
+      }
+      
+      // Wire up reset button for splitter
+      const resetBtn = document.getElementById('reset-splitter-angle');
+      if (resetBtn) {
+        resetBtn.addEventListener('click', () => {
+          this.onResetSplitterAngle?.();
+        });
+      }
     } else {
       document.body.classList.remove('prism-selected');
       this.prismInfoEl.innerHTML = `<span class="label">None selected</span>`;
@@ -559,10 +599,33 @@ export class UIPanel {
       
       this.prismInfoEl.innerHTML = `
         <div class="prism-name">Wall Block</div>
-        <div class="angle">${wall.getRotationDegrees().toFixed(1)}°</div>
+        <div class="angle-input-row">
+          <input type="number" id="angle-input" class="angle-input" value="${wall.getRotationDegrees().toFixed(1)}" min="0" max="360" step="0.1">
+          <span class="angle-unit">°</span>
+        </div>
         <div class="position">Position: (${posX}, ${posZ})</div>
         <div class="material">Solid obstruction</div>
       `;
+      
+      // Wire up angle input for walls too
+      const angleInput = document.getElementById('angle-input') as HTMLInputElement;
+      if (angleInput) {
+        angleInput.addEventListener('change', (e) => {
+          const value = parseFloat((e.target as HTMLInputElement).value);
+          if (!isNaN(value)) {
+            this.onAngleChange?.(value);
+          }
+        });
+        angleInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            const value = parseFloat((e.target as HTMLInputElement).value);
+            if (!isNaN(value)) {
+              this.onAngleChange?.(value);
+            }
+            (e.target as HTMLInputElement).blur();
+          }
+        });
+      }
     } else {
       document.body.classList.remove('prism-selected');
       this.prismInfoEl.innerHTML = `<span class="label">None selected</span>`;
@@ -575,11 +638,12 @@ export class UIPanel {
   updatePrismRotation(prism: Prism): void {
     if (!this.prismInfoEl) return;
     
-    const angleEl = this.prismInfoEl.querySelector('.angle');
+    const angleInput = this.prismInfoEl.querySelector('#angle-input') as HTMLInputElement;
     const posEl = this.prismInfoEl.querySelector('.position');
     
-    if (angleEl) {
-      angleEl.textContent = `${prism.getRotationDegrees().toFixed(1)}°`;
+    if (angleInput && document.activeElement !== angleInput) {
+      // Only update if user isn't actively typing
+      angleInput.value = prism.getRotationDegrees().toFixed(1);
     }
     if (posEl) {
       const posX = prism.config.position.x.toFixed(1);

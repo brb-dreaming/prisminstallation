@@ -28,6 +28,9 @@ export class Wall {
   isSelected: boolean = false;
   isHovered: boolean = false;
   
+  // Selection indicator
+  private selectionRing: THREE.LineLoop | null = null;
+  
   constructor(config: Partial<WallConfig> = {}) {
     this.config = {
       position: new THREE.Vector3(0, 5, 0),
@@ -39,7 +42,41 @@ export class Wall {
     };
     
     this.mesh = this.createMesh();
+    this.createSelectionIndicator();
     this.updateBoundingBox();
+  }
+  
+  /**
+   * Create a subtle rectangular ring indicator for selection state
+   */
+  private createSelectionIndicator(): void {
+    const { width, depth } = this.config;
+    const scale = 1.3;
+    
+    // Create a rectangular ring around the wall's base
+    const halfW = (width / 2) * scale;
+    const halfD = (depth / 2) * scale;
+    
+    const points = [
+      new THREE.Vector3(-halfW, 0, -halfD),
+      new THREE.Vector3(halfW, 0, -halfD),
+      new THREE.Vector3(halfW, 0, halfD),
+      new THREE.Vector3(-halfW, 0, halfD),
+      new THREE.Vector3(-halfW, 0, -halfD), // Close the loop
+    ];
+    
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    const material = new THREE.LineBasicMaterial({
+      color: 0xd4af37, // Gold accent color
+      transparent: true,
+      opacity: 0,
+      linewidth: 1,
+    });
+    
+    this.selectionRing = new THREE.LineLoop(geometry, material);
+    this.selectionRing.position.y = -this.config.height / 2 - 0.1; // Just below the wall
+    this.selectionRing.visible = false;
+    this.mesh.add(this.selectionRing);
   }
   
   /**
@@ -138,9 +175,21 @@ export class Wall {
     this.isSelected = selected;
     const material = this.mesh.material as THREE.MeshStandardMaterial;
     if (selected) {
-      material.emissive = new THREE.Color(0x333333);
+      material.emissive = new THREE.Color(0x222222);
+      // Show selection ring
+      if (this.selectionRing) {
+        this.selectionRing.visible = true;
+        const ringMaterial = this.selectionRing.material as THREE.LineBasicMaterial;
+        ringMaterial.opacity = 0.6;
+      }
     } else {
       material.emissive = new THREE.Color(0x000000);
+      // Hide selection ring
+      if (this.selectionRing) {
+        this.selectionRing.visible = false;
+        const ringMaterial = this.selectionRing.material as THREE.LineBasicMaterial;
+        ringMaterial.opacity = 0;
+      }
     }
   }
   

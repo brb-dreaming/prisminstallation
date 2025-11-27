@@ -319,6 +319,14 @@ class PrismSimulator {
       this.controls.setSnapRotationDegrees(degrees);
     };
     
+    this.ui.onAngleChange = (angleDegrees) => {
+      this.setSelectedObjectAngle(angleDegrees);
+    };
+    
+    this.ui.onResetSplitterAngle = () => {
+      this.resetSplitterToOptimalAngle();
+    };
+    
     // Initialize saved configs list
     this.ui.updateSavedConfigsList(getSavedConfigNames());
     
@@ -656,6 +664,44 @@ class PrismSimulator {
     const gx = Math.round(pos.x / gridSize);
     const gz = Math.round(pos.z / gridSize);
     return `${gx},${gz}`;
+  }
+  
+  /**
+   * Reset the splitter prism to its optimal angle (30°)
+   */
+  private resetSplitterToOptimalAngle(): void {
+    const optimalAngle = Math.PI / 6; // 30 degrees
+    this.splitterPrism.setRotation(optimalAngle);
+    this.ui.updatePrismRotation(this.splitterPrism);
+    this.needsRayUpdate = true;
+  }
+  
+  /**
+   * Set the angle of the currently selected object (prism or wall)
+   */
+  private setSelectedObjectAngle(angleDegrees: number): void {
+    const selected = this.controls.getSelectedObject();
+    if (!selected) return;
+    
+    // Normalize angle to 0-360 range
+    let normalizedAngle = angleDegrees % 360;
+    if (normalizedAngle < 0) normalizedAngle += 360;
+    
+    // Convert to radians
+    const radians = (normalizedAngle * Math.PI) / 180;
+    
+    if (selected instanceof Wall) {
+      selected.setRotation(radians);
+      this.ui.updateObjectSelection(selected);
+    } else {
+      // It's a Prism
+      const prism = selected as Prism;
+      prism.setRotation(radians);
+      this.ui.updatePrismRotation(prism);
+    }
+    
+    // Update ray tracing
+    this.needsRayUpdate = true;
   }
   
   /**
