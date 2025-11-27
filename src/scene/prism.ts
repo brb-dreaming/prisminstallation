@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import type { RayHit } from '../optics/ray';
 import { Ray } from '../optics/ray';
 import type { GlassMaterial } from '../optics/refraction';
-import { GLASS_MATERIALS, refractRay } from '../optics/refraction';
+import { GLASS_MATERIALS, refractRay, reflect } from '../optics/refraction';
 
 export interface PrismConfig {
   // Physical dimensions (in centimeters for real-world scale)
@@ -270,13 +270,17 @@ export class Prism {
   }
   
   /**
-   * Trace a ray through the prism, handling entry and exit refraction
+   * Trace a ray through the prism, handling entry, exit refraction, and TIR
+   * Returns both the exiting rays and the internal ray segments for visualization
    */
-  traceRay(ray: Ray, debug: boolean = false): Ray[] {
-    const results: Ray[] = [];
-    const maxBounces = 10;
+  traceRay(ray: Ray, debug: boolean = false): { exitRays: Ray[], internalRays: Ray[] } {
+    const exitRays: Ray[] = [];
+    const internalRays: Ray[] = [];
+    const maxBounces = 16;  // Increased for TIR bounces
     let currentRay = ray.clone();
     let inside = false;
+    let tirCount = 0;
+    const maxTIR = 6;  // Limit internal reflections to prevent infinite loops
     
     for (let bounce = 0; bounce < maxBounces; bounce++) {
       const intersection = this.intersectRay(currentRay, 0.01);
@@ -287,8 +291,18 @@ export class Prism {
       }
       
       const { hit } = intersection;
-      if (debug) console.log(`  Bounce ${bounce}: Hit at`, hit.point, 'entering:', hit.entering);
+      if (debug) console.log(`  Bounce ${bounce}: Hit at`, hit.point, 'entering:', hit.entering, 'inside:', inside);
       
+      // If we are inside, this segment (from origin to hit point) is an internal ray
+      if (inside) {
+         // We need to store the ray representing this segment
+         // The segment is defined by currentRay.origin -> hit.point
+         // We can just store currentRay, the renderer will use its origin and the hit point
+         // We attach the hit point to the ray for easier segment creation later? 
+         // No, the OpticalSystem handles segment creation from ray + hit distance
+         internalRays.push(currentRay.clone());
+      }
+
       // Refract through the surface
       const refracted = refractRay(
         currentRay,
@@ -303,7 +317,7 @@ export class Prism {
         if (inside) {
           // Exiting the prism - this is our output ray
           if (debug) console.log(`  Bounce ${bounce}: Exiting prism, refracted ray:`, refracted.direction);
-          results.push(refracted);
+          exitRays.push(refracted);
           break;
         } else {
           // Entering the prism - continue tracing inside
@@ -312,13 +326,35 @@ export class Prism {
           inside = true;
         }
       } else {
-        // Total internal reflection - ray trapped
-        if (debug) console.log(`  Bounce ${bounce}: Total internal reflection (refraction failed)`);
-        break;
+        // Total Internal Reflection - reflect inside the prism
+        if (inside && tirCount < maxTIR) {
+          tirCount++;
+          if (debug) console.log(`  Bounce ${bounce}: TIR #${tirCount} - reflecting internally`);
+          
+          // Calculate reflection direction
+          // The normal should point outward, so we need to flip it for internal reflection
+          const internalNormal = hit.normal.clone().negate();
+          const reflectedDir = reflect(currentRay.direction, internalNormal);
+          
+          // Create reflected ray, offset along the reflected direction
+          currentRay = new Ray(
+            hit.point.clone().add(reflectedDir.clone().multiplyScalar(0.05)),
+            reflectedDir,
+            currentRay.wavelength,
+            currentRay.intensity * 0.99  // Tiny loss per TIR bounce
+          );
+          
+          // Still inside the prism, continues loop
+          inside = true;
+        } else {
+          // Not inside or max TIR reached
+          if (debug) console.log(`  Bounce ${bounce}: TIR limit reached or not inside`);
+          break;
+        }
       }
     }
     
-    return results;
+    return { exitRays, internalRays };
   }
   
   /**

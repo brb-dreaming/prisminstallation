@@ -9,11 +9,16 @@ import { Wall } from '../scene/wall';
 
 export interface ControlsConfig {
   enableOrbit: boolean;
+  enablePan: boolean;
   enablePrismRotation: boolean;
   enableDragMove: boolean;
   rotationSensitivity: number;
   gridSize: number;  // Grid cell size for snapping
   gridOrigin: THREE.Vector3;  // Origin of the grid (light source position)
+  gridExtent: number;  // Total grid size
+  gridColor: number;
+  gridSecondaryColor: number;
+  snapRotationDegrees: number;  // Snap rotation increment when shift is held (degrees)
 }
 
 export type DraggableObject = Prism | Wall;
@@ -70,11 +75,16 @@ export class InteractionController {
     
     this.config = {
       enableOrbit: true,
+      enablePan: true,
       enablePrismRotation: true,
       enableDragMove: true,
       rotationSensitivity: 0.01,
       gridSize: 2,  // 2cm grid cells
       gridOrigin: new THREE.Vector3(0, 0, 0),
+      gridExtent: 40,
+      gridColor: 0x3a3a3a,
+      gridSecondaryColor: 0x1a1a1a,
+      snapRotationDegrees: 15,  // 15° snap when shift is held
       ...config
     };
     
@@ -85,10 +95,20 @@ export class InteractionController {
     this.orbitControls = new OrbitControls(camera, domElement);
     this.orbitControls.enableDamping = true;
     this.orbitControls.dampingFactor = 0.05;
-    this.orbitControls.minDistance = 10;
-    this.orbitControls.maxDistance = 100;
-    this.orbitControls.maxPolarAngle = Math.PI * 0.9;
+    this.orbitControls.minDistance = 5;
+    this.orbitControls.maxDistance = 200;
+    this.orbitControls.maxPolarAngle = Math.PI * 0.95;
+    this.orbitControls.enablePan = this.config.enablePan;
+    this.orbitControls.panSpeed = 0.8;
+    this.orbitControls.screenSpacePanning = true;
     this.orbitControls.target.set(-5, 5, 0); // Look at center of prism arrangement
+    
+    // Enable right-click pan, scroll for zoom
+    this.orbitControls.mouseButtons = {
+      LEFT: THREE.MOUSE.ROTATE,
+      MIDDLE: THREE.MOUSE.DOLLY,
+      RIGHT: THREE.MOUSE.PAN
+    };
     
     this.setupEventListeners();
   }
@@ -227,11 +247,9 @@ export class InteractionController {
     // Collect all interactive meshes
     const meshes: THREE.Mesh[] = [];
     
-    // Director prisms are interactive
+    // All prisms are interactive (both director and splitter)
     for (const p of this.prisms) {
-      if (p.config.type === 'director') {
-        meshes.push(p.mesh);
-      }
+      meshes.push(p.mesh);
     }
     
     // Walls are interactive
@@ -295,6 +313,28 @@ export class InteractionController {
     const snappedZ = Math.round(relZ / gridSize) * gridSize + gridOrigin.z;
     
     return new THREE.Vector3(snappedX, position.y, snappedZ);
+  }
+  
+  /**
+   * Snap rotation to configured increment
+   */
+  snapRotation(rotationRadians: number): number {
+    const snapRadians = (this.config.snapRotationDegrees * Math.PI) / 180;
+    return Math.round(rotationRadians / snapRadians) * snapRadians;
+  }
+  
+  /**
+   * Get the current snap rotation amount in degrees
+   */
+  getSnapRotationDegrees(): number {
+    return this.config.snapRotationDegrees;
+  }
+  
+  /**
+   * Set the snap rotation amount in degrees
+   */
+  setSnapRotationDegrees(degrees: number): void {
+    this.config.snapRotationDegrees = Math.max(1, Math.min(90, degrees));
   }
   
   // Event handlers
@@ -375,7 +415,12 @@ export class InteractionController {
         // Rotate the selected object
         const currentAngle = this.getMouseAngle(this.selectedObject);
         const deltaAngle = currentAngle - this.dragStartAngle;
-        const newRotation = this.dragStartRotation + deltaAngle * 2;
+        let newRotation = this.dragStartRotation + deltaAngle * 2;
+        
+        // Apply snap rotation when shift is held
+        if (event.shiftKey) {
+          newRotation = this.snapRotation(newRotation);
+        }
         
         if (this.selectedObject instanceof Prism) {
           this.selectedObject.setRotation(newRotation);
@@ -495,7 +540,10 @@ export class InteractionController {
         } else {
           const currentAngle = this.getMouseAngle(this.selectedObject);
           const deltaAngle = currentAngle - this.dragStartAngle;
-          const newRotation = this.dragStartRotation + deltaAngle * 2;
+          let newRotation = this.dragStartRotation + deltaAngle * 2;
+          
+          // Touch snap: use two-finger touch as snap modifier (future enhancement)
+          // For now, touch always uses free rotation
           
           if (this.selectedObject instanceof Prism) {
             this.selectedObject.setRotation(newRotation);
@@ -553,31 +601,97 @@ export class InteractionController {
     return this.selectedObject;
   }
   
+  // Reference to scene for grid updates
+  private scene: THREE.Scene | null = null;
+  
   /**
    * Create and add a visual grid helper to the scene
    */
   createGridHelper(scene: THREE.Scene): THREE.GridHelper {
-    // Remove existing grid if any
-    if (this.gridHelper) {
-      scene.remove(this.gridHelper);
+    this.scene = scene;
+    return this.updateGridHelper();
+  }
+  
+  /**
+   * Update the grid helper with current config values
+   */
+  updateGridHelper(): THREE.GridHelper {
+    if (!this.scene) {
+      throw new Error('Scene not set - call createGridHelper first');
     }
     
-    const { gridSize, gridOrigin } = this.config;
-    const gridExtent = 40; // Total grid size
-    const divisions = gridExtent / gridSize;
+    // Remove existing grid if any
+    if (this.gridHelper) {
+      this.scene.remove(this.gridHelper);
+      this.gridHelper.geometry.dispose();
+      (this.gridHelper.material as THREE.Material).dispose();
+    }
+    
+    const { gridSize, gridOrigin, gridExtent, gridColor, gridSecondaryColor } = this.config;
+    const divisions = Math.floor(gridExtent / gridSize);
     
     this.gridHelper = new THREE.GridHelper(
       gridExtent,
       divisions,
-      0x3a3a3a,  // Center line color
-      0x1a1a1a   // Grid line color
+      gridColor,      // Center line color
+      gridSecondaryColor   // Grid line color
     );
     
     // Position at the same Y as prisms
     this.gridHelper.position.set(gridOrigin.x, 5, gridOrigin.z);
     
-    scene.add(this.gridHelper);
+    this.scene.add(this.gridHelper);
     return this.gridHelper;
+  }
+  
+  /**
+   * Set grid size and update the visual helper
+   */
+  setGridSize(size: number): void {
+    this.config.gridSize = Math.max(0.5, Math.min(10, size));
+    if (this.scene) {
+      this.updateGridHelper();
+    }
+  }
+  
+  /**
+   * Set grid extent (total size) and update the visual helper
+   */
+  setGridExtent(extent: number): void {
+    this.config.gridExtent = Math.max(20, Math.min(200, extent));
+    if (this.scene) {
+      this.updateGridHelper();
+    }
+  }
+  
+  /**
+   * Set grid colors and update the visual helper
+   */
+  setGridColors(primary: number, secondary: number): void {
+    this.config.gridColor = primary;
+    this.config.gridSecondaryColor = secondary;
+    if (this.scene) {
+      this.updateGridHelper();
+    }
+  }
+  
+  /**
+   * Get orbit controls for external access (e.g., camera position)
+   */
+  getOrbitControls(): OrbitControls {
+    return this.orbitControls;
+  }
+  
+  /**
+   * Get current grid config
+   */
+  getGridConfig(): { size: number; extent: number; color: number; secondaryColor: number } {
+    return {
+      size: this.config.gridSize,
+      extent: this.config.gridExtent,
+      color: this.config.gridColor,
+      secondaryColor: this.config.gridSecondaryColor
+    };
   }
   
   /**

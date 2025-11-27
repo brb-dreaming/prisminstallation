@@ -7,6 +7,16 @@ import type { Wall } from '../scene/wall';
 import type { ConvergenceResult } from '../interaction/puzzle';
 import type { InteractionMode, DraggableObject } from '../interaction/controls';
 
+export interface EnvironmentSettings {
+  backgroundColor: string;
+  gridColor: string;
+  gridSecondaryColor: string;
+  ambientIntensity: number;
+  gridSize: number;
+  gridExtent: number;
+  snapRotationDegrees: number;
+}
+
 /**
  * Manages the UI overlay elements
  */
@@ -25,7 +35,23 @@ export class UIPanel {
   onDeleteSelected: (() => void) | null = null;
   onModeChange: ((mode: InteractionMode) => void) | null = null;
   
+  // Config callbacks
+  onSaveConfig: ((name: string) => void) | null = null;
+  onLoadConfig: ((name: string) => void) | null = null;
+  onImportConfig: (() => void) | null = null;
+  onExportConfig: (() => void) | null = null;
+  onNewConfig: (() => void) | null = null;
+  
+  // Environment callbacks
+  onBackgroundColorChange: ((color: string) => void) | null = null;
+  onGridColorChange: ((primary: string, secondary: string) => void) | null = null;
+  onAmbientIntensityChange: ((intensity: number) => void) | null = null;
+  onGridSizeChange: ((size: number) => void) | null = null;
+  onGridExtentChange: ((extent: number) => void) | null = null;
+  onSnapRotationChange: ((degrees: number) => void) | null = null;
+  
   private currentMode: InteractionMode = 'rotate';
+  private savedConfigs: string[] = [];
   
   constructor() {
     this.prismInfoEl = document.getElementById('prism-info');
@@ -34,6 +60,8 @@ export class UIPanel {
     this.modeToggleEl = null;
     
     this.createEditingPanel();
+    this.createEnvironmentPanel();
+    this.createConfigPanel();
     this.createExportPanel();
   }
   
@@ -58,6 +86,13 @@ export class UIPanel {
           <span class="mode-icon">⊹</span>
           <span class="mode-label">Move</span>
         </button>
+      </div>
+      <div class="snap-rotation-control">
+        <label>Snap Rotation (hold Shift)</label>
+        <div class="snap-rotation-row">
+          <input type="range" id="snap-rotation" min="1" max="45" value="15" step="1" class="slider-input">
+          <span id="snap-rotation-value" class="slider-value">15°</span>
+        </div>
       </div>
       <h3 style="margin-top: 16px;">Add Objects</h3>
       <div class="add-buttons">
@@ -88,6 +123,14 @@ export class UIPanel {
       });
     });
     
+    // Wire up snap rotation slider
+    document.getElementById('snap-rotation')?.addEventListener('input', (e) => {
+      const value = parseInt((e.target as HTMLInputElement).value);
+      const valueEl = document.getElementById('snap-rotation-value');
+      if (valueEl) valueEl.textContent = `${value}°`;
+      this.onSnapRotationChange?.(value);
+    });
+    
     // Wire up add buttons
     document.getElementById('add-prism')?.addEventListener('click', () => {
       this.onAddPrism?.();
@@ -103,6 +146,230 @@ export class UIPanel {
   }
   
   /**
+   * Create the environment panel with color and lighting controls
+   */
+  private createEnvironmentPanel(): void {
+    const infoPanel = document.getElementById('info-panel');
+    if (!infoPanel) return;
+    
+    const envSection = document.createElement('div');
+    envSection.className = 'panel-section collapsible';
+    envSection.innerHTML = `
+      <h3 class="collapsible-header" data-target="env-content">
+        <span class="collapse-icon">▸</span>
+        Environment
+      </h3>
+      <div class="collapsible-content collapsed" id="env-content">
+      <div class="env-controls">
+        <div class="env-row">
+          <label>Background</label>
+          <input type="color" id="env-bg-color" value="#050507" class="color-input">
+        </div>
+        <div class="env-row">
+          <label>Grid Primary</label>
+          <input type="color" id="env-grid-color" value="#3a3a3a" class="color-input">
+        </div>
+        <div class="env-row">
+          <label>Grid Secondary</label>
+          <input type="color" id="env-grid-secondary" value="#1a1a1a" class="color-input">
+        </div>
+        <div class="env-row">
+          <label>Ambient Light</label>
+          <input type="range" id="env-ambient" min="0" max="100" value="50" class="slider-input">
+          <span id="ambient-value" class="slider-value">50%</span>
+        </div>
+        <div class="env-row">
+          <label>Grid Cell Size</label>
+          <input type="range" id="env-grid-size" min="1" max="10" value="2" step="0.5" class="slider-input">
+          <span id="grid-size-value" class="slider-value">2</span>
+        </div>
+        <div class="env-row">
+          <label>Grid Extent</label>
+          <input type="range" id="env-grid-extent" min="20" max="150" value="40" step="10" class="slider-input">
+          <span id="grid-extent-value" class="slider-value">40</span>
+        </div>
+      </div>
+      </div>
+    `;
+    
+    infoPanel.appendChild(envSection);
+    
+    // Wire up collapsible header
+    this.setupCollapsible(envSection);
+    
+    // Wire up color inputs
+    document.getElementById('env-bg-color')?.addEventListener('input', (e) => {
+      const color = (e.target as HTMLInputElement).value;
+      this.onBackgroundColorChange?.(color);
+    });
+    
+    document.getElementById('env-grid-color')?.addEventListener('input', (e) => {
+      const primary = (e.target as HTMLInputElement).value;
+      const secondary = (document.getElementById('env-grid-secondary') as HTMLInputElement)?.value || '#1a1a1a';
+      this.onGridColorChange?.(primary, secondary);
+    });
+    
+    document.getElementById('env-grid-secondary')?.addEventListener('input', (e) => {
+      const secondary = (e.target as HTMLInputElement).value;
+      const primary = (document.getElementById('env-grid-color') as HTMLInputElement)?.value || '#3a3a3a';
+      this.onGridColorChange?.(primary, secondary);
+    });
+    
+    // Wire up sliders
+    document.getElementById('env-ambient')?.addEventListener('input', (e) => {
+      const value = parseInt((e.target as HTMLInputElement).value);
+      const valueEl = document.getElementById('ambient-value');
+      if (valueEl) valueEl.textContent = `${value}%`;
+      this.onAmbientIntensityChange?.(value / 100);
+    });
+    
+    document.getElementById('env-grid-size')?.addEventListener('input', (e) => {
+      const value = parseFloat((e.target as HTMLInputElement).value);
+      const valueEl = document.getElementById('grid-size-value');
+      if (valueEl) valueEl.textContent = value.toString();
+      this.onGridSizeChange?.(value);
+    });
+    
+    document.getElementById('env-grid-extent')?.addEventListener('input', (e) => {
+      const value = parseInt((e.target as HTMLInputElement).value);
+      const valueEl = document.getElementById('grid-extent-value');
+      if (valueEl) valueEl.textContent = value.toString();
+      this.onGridExtentChange?.(value);
+    });
+  }
+  
+  /**
+   * Create the configuration save/load panel
+   */
+  private createConfigPanel(): void {
+    const infoPanel = document.getElementById('info-panel');
+    if (!infoPanel) return;
+    
+    const configSection = document.createElement('div');
+    configSection.className = 'panel-section collapsible';
+    configSection.innerHTML = `
+      <h3 class="collapsible-header" data-target="config-content">
+        <span class="collapse-icon">▸</span>
+        Configuration
+      </h3>
+      <div class="collapsible-content collapsed" id="config-content">
+      <div class="config-controls">
+        <button id="config-new" class="new-config-btn" title="Clear all prisms and start fresh">
+          + New Empty Config
+        </button>
+        <div class="config-group">
+          <label class="config-label">Save Current</label>
+          <input type="text" id="config-name" placeholder="Config name..." class="config-input">
+          <button id="config-save" class="config-btn-full" title="Save to browser">Save</button>
+        </div>
+        <div class="config-group">
+          <label class="config-label">Load Saved</label>
+          <select id="config-select" class="config-select">
+            <option value="">Select a config...</option>
+          </select>
+          <button id="config-load" class="config-btn-full" title="Load selected">Load</button>
+        </div>
+        <div class="config-buttons">
+          <button id="config-import" class="export-btn" title="Import from file">Import File</button>
+          <button id="config-export" class="export-btn" title="Export to file">Export File</button>
+        </div>
+      </div>
+      </div>
+    `;
+    
+    infoPanel.appendChild(configSection);
+    
+    // Wire up collapsible header
+    this.setupCollapsible(configSection);
+    
+    // Wire up buttons
+    document.getElementById('config-new')?.addEventListener('click', () => {
+      this.onNewConfig?.();
+    });
+    
+    document.getElementById('config-save')?.addEventListener('click', () => {
+      const nameInput = document.getElementById('config-name') as HTMLInputElement;
+      const name = nameInput?.value.trim();
+      if (name) {
+        this.onSaveConfig?.(name);
+        this.updateSavedConfigsList();
+      } else {
+        alert('Please enter a configuration name');
+      }
+    });
+    
+    document.getElementById('config-load')?.addEventListener('click', () => {
+      const select = document.getElementById('config-select') as HTMLSelectElement;
+      const name = select?.value;
+      if (name) {
+        this.onLoadConfig?.(name);
+      }
+    });
+    
+    document.getElementById('config-import')?.addEventListener('click', () => {
+      this.onImportConfig?.();
+    });
+    
+    document.getElementById('config-export')?.addEventListener('click', () => {
+      this.onExportConfig?.();
+    });
+  }
+  
+  /**
+   * Update the saved configs dropdown list
+   */
+  updateSavedConfigsList(configs?: string[]): void {
+    if (configs) {
+      this.savedConfigs = configs;
+    }
+    
+    const select = document.getElementById('config-select') as HTMLSelectElement;
+    if (!select) return;
+    
+    // Clear existing options except the first placeholder
+    while (select.options.length > 1) {
+      select.remove(1);
+    }
+    
+    // Add saved configs
+    for (const name of this.savedConfigs) {
+      const option = document.createElement('option');
+      option.value = name;
+      option.textContent = name;
+      select.appendChild(option);
+    }
+  }
+  
+  /**
+   * Update environment UI to reflect current settings
+   */
+  updateEnvironmentUI(settings: EnvironmentSettings): void {
+    const bgColor = document.getElementById('env-bg-color') as HTMLInputElement;
+    const gridColor = document.getElementById('env-grid-color') as HTMLInputElement;
+    const gridSecondary = document.getElementById('env-grid-secondary') as HTMLInputElement;
+    const ambient = document.getElementById('env-ambient') as HTMLInputElement;
+    const ambientValue = document.getElementById('ambient-value');
+    const gridSize = document.getElementById('env-grid-size') as HTMLInputElement;
+    const gridSizeValue = document.getElementById('grid-size-value');
+    const gridExtent = document.getElementById('env-grid-extent') as HTMLInputElement;
+    const gridExtentValue = document.getElementById('grid-extent-value');
+    const snapRotation = document.getElementById('snap-rotation') as HTMLInputElement;
+    const snapRotationValue = document.getElementById('snap-rotation-value');
+    
+    if (bgColor) bgColor.value = settings.backgroundColor;
+    if (gridColor) gridColor.value = settings.gridColor;
+    if (gridSecondary) gridSecondary.value = settings.gridSecondaryColor;
+    if (ambient) ambient.value = String(Math.round(settings.ambientIntensity * 100));
+    if (ambientValue) ambientValue.textContent = `${Math.round(settings.ambientIntensity * 100)}%`;
+    if (gridSize) gridSize.value = String(settings.gridSize);
+    if (gridSizeValue) gridSizeValue.textContent = String(settings.gridSize);
+    if (gridExtent) gridExtent.value = String(settings.gridExtent);
+    if (gridExtentValue) gridExtentValue.textContent = String(settings.gridExtent);
+    if (snapRotation) snapRotation.value = String(settings.snapRotationDegrees);
+    if (snapRotationValue) snapRotationValue.textContent = `${settings.snapRotationDegrees}°`;
+  }
+  
+  /**
    * Create the export panel with buttons
    */
   private createExportPanel(): void {
@@ -110,16 +377,24 @@ export class UIPanel {
     if (!infoPanel) return;
     
     const exportSection = document.createElement('div');
-    exportSection.className = 'panel-section';
+    exportSection.className = 'panel-section collapsible';
     exportSection.innerHTML = `
-      <h3>Export</h3>
-      <div class="export-buttons">
-        <button id="export-blueprint" class="export-btn">Blueprint (TXT)</button>
-        <button id="export-json" class="export-btn">Data (JSON)</button>
+      <h3 class="collapsible-header" data-target="export-content">
+        <span class="collapse-icon">▸</span>
+        Blueprint Export
+      </h3>
+      <div class="collapsible-content collapsed" id="export-content">
+        <div class="export-buttons">
+          <button id="export-blueprint" class="export-btn">Blueprint (TXT)</button>
+          <button id="export-json" class="export-btn">Data (JSON)</button>
+        </div>
       </div>
     `;
     
     infoPanel.appendChild(exportSection);
+    
+    // Wire up collapsible header
+    this.setupCollapsible(exportSection);
     
     // Wire up buttons
     document.getElementById('export-blueprint')?.addEventListener('click', () => {
@@ -128,6 +403,29 @@ export class UIPanel {
     
     document.getElementById('export-json')?.addEventListener('click', () => {
       this.onExportJSON?.();
+    });
+  }
+  
+  /**
+   * Set up collapsible section behavior
+   */
+  private setupCollapsible(section: HTMLElement): void {
+    const header = section.querySelector('.collapsible-header');
+    if (!header) return;
+    
+    header.addEventListener('click', () => {
+      const targetId = header.getAttribute('data-target');
+      if (!targetId) return;
+      
+      const content = document.getElementById(targetId);
+      const icon = header.querySelector('.collapse-icon');
+      
+      if (content) {
+        content.classList.toggle('collapsed');
+        if (icon) {
+          icon.textContent = content.classList.contains('collapsed') ? '▸' : '▾';
+        }
+      }
     });
   }
   
@@ -160,14 +458,14 @@ export class UIPanel {
     if (hint) {
       if (this.currentMode === 'move') {
         hint.innerHTML = `
-          <span>Orbit: drag</span>
+          <span>Orbit: drag | Pan: right-drag | Zoom: scroll</span>
           <span>Move object: click + drag (snaps to grid)</span>
           <span>Press M to toggle mode</span>
         `;
       } else {
         hint.innerHTML = `
-          <span>Orbit: drag</span>
-          <span>Rotate prism: click + drag on prism</span>
+          <span>Orbit: drag | Pan: right-drag | Zoom: scroll</span>
+          <span>Rotate: click + drag | Hold Shift for snap</span>
           <span>Press M to toggle mode</span>
         `;
       }
@@ -213,23 +511,30 @@ export class UIPanel {
     if (prism) {
       document.body.classList.add('prism-selected');
       
-      // Get color group name from the attached colorGroup, or fallback to wavelength
-      const colorGroup = (prism as any).colorGroup;
       let displayName: string;
+      let typeLabel: string;
       
-      if (colorGroup) {
-        displayName = colorGroup.name;  // 'Warm', 'Green', or 'Cool'
-      } else if (prism.config.targetWavelength) {
-        displayName = this.wavelengthToColorName(prism.config.targetWavelength);
+      if (prism.config.type === 'splitter') {
+        displayName = 'Central';
+        typeLabel = 'Splitter Prism';
       } else {
-        displayName = 'Splitter';
+        // Get color group name from the attached colorGroup, or fallback to wavelength
+        const colorGroup = (prism as any).colorGroup;
+        if (colorGroup) {
+          displayName = colorGroup.name;  // 'Warm', 'Green', or 'Cool'
+        } else if (prism.config.targetWavelength) {
+          displayName = this.wavelengthToColorName(prism.config.targetWavelength);
+        } else {
+          displayName = 'Director';
+        }
+        typeLabel = 'Director Prism';
       }
       
       const posX = prism.config.position.x.toFixed(1);
       const posZ = prism.config.position.z.toFixed(1);
       
       this.prismInfoEl.innerHTML = `
-        <div class="prism-name">${displayName} Director</div>
+        <div class="prism-name">${displayName} ${typeLabel}</div>
         <div class="angle">${prism.getRotationDegrees().toFixed(1)}°</div>
         <div class="position">Position: (${posX}, ${posZ})</div>
         <div class="material">${prism.config.material.name}</div>
