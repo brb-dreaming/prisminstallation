@@ -2,7 +2,8 @@
  * UI Panel - minimal info overlay with scene editing controls
  */
 
-import type { Prism } from '../scene/prism';
+import type { Prism, PrismShape } from '../scene/prism';
+import { PRISM_SHAPE_INFO, getAvailableShapes } from '../scene/prism';
 import type { Wall } from '../scene/wall';
 import type { ConvergenceResult } from '../interaction/puzzle';
 import type { InteractionMode, DraggableObject } from '../interaction/controls';
@@ -30,13 +31,16 @@ export class UIPanel {
   onExportBlueprint: (() => void) | null = null;
   onExportJSON: (() => void) | null = null;
   onEnterVR: (() => void) | null = null;
-  onAddPrism: (() => void) | null = null;
+  onAddPrism: ((shape: PrismShape) => void) | null = null;
   onAddWall: (() => void) | null = null;
   onDeleteSelected: (() => void) | null = null;
   onModeChange: ((mode: InteractionMode) => void) | null = null;
   onAngleChange: ((angleDegrees: number) => void) | null = null;
   onResetSplitterAngle: (() => void) | null = null;
   onWallWidthChange: ((width: number) => void) | null = null;
+  
+  // Current selected shape for new prisms
+  private selectedShape: PrismShape = 'equilateral';
   
   // Config callbacks
   onSaveConfig: ((name: string) => void) | null = null;
@@ -75,6 +79,13 @@ export class UIPanel {
     const infoPanel = document.getElementById('info-panel');
     if (!infoPanel) return;
     
+    // Build shape options HTML
+    const shapes = getAvailableShapes();
+    const shapeOptionsHTML = shapes.map(shape => {
+      const info = PRISM_SHAPE_INFO[shape];
+      return `<option value="${shape}" title="${info.description}">${info.icon} ${info.name}</option>`;
+    }).join('');
+    
     // Insert before other sections
     const editSection = document.createElement('div');
     editSection.className = 'panel-section';
@@ -98,9 +109,16 @@ export class UIPanel {
         </div>
       </div>
       <h3 style="margin-top: 16px;">Add Objects</h3>
+      <div class="shape-selector">
+        <label>Prism Shape</label>
+        <select id="prism-shape-select" class="shape-select">
+          ${shapeOptionsHTML}
+        </select>
+        <div id="shape-description" class="shape-description">60° apex - classic rainbow maker with maximum dispersion</div>
+      </div>
       <div class="add-buttons">
-        <button id="add-prism" class="add-btn" title="Add a new director prism">
-          <span class="btn-icon">◇</span> Prism
+        <button id="add-prism" class="add-btn" title="Add a new prism with selected shape">
+          <span class="btn-icon">◇</span> Add Prism
         </button>
         <button id="add-wall" class="add-btn" title="Add a blocking wall">
           <span class="btn-icon">■</span> Wall
@@ -134,9 +152,19 @@ export class UIPanel {
       this.onSnapRotationChange?.(value);
     });
     
+    // Wire up shape selector
+    document.getElementById('prism-shape-select')?.addEventListener('change', (e) => {
+      const shape = (e.target as HTMLSelectElement).value as PrismShape;
+      this.selectedShape = shape;
+      const descEl = document.getElementById('shape-description');
+      if (descEl) {
+        descEl.textContent = PRISM_SHAPE_INFO[shape].description;
+      }
+    });
+    
     // Wire up add buttons
     document.getElementById('add-prism')?.addEventListener('click', () => {
-      this.onAddPrism?.();
+      this.onAddPrism?.(this.selectedShape);
     });
     
     document.getElementById('add-wall')?.addEventListener('click', () => {
@@ -534,6 +562,10 @@ export class UIPanel {
         typeLabel = 'Director Prism';
       }
       
+      // Get shape info
+      const shapeInfo = PRISM_SHAPE_INFO[prism.config.shape];
+      const shapeDisplay = shapeInfo ? `${shapeInfo.icon} ${shapeInfo.name}` : prism.config.shape;
+      
       const posX = prism.config.position.x.toFixed(1);
       const posZ = prism.config.position.z.toFixed(1);
       
@@ -544,6 +576,7 @@ export class UIPanel {
       
       this.prismInfoEl.innerHTML = `
         <div class="prism-name">${displayName} ${typeLabel}</div>
+        <div class="prism-shape">${shapeDisplay}</div>
         <div class="angle-input-row">
           <input type="number" id="angle-input" class="angle-input" value="${prism.getRotationDegrees().toFixed(1)}" min="0" max="360" step="0.1">
           <span class="angle-unit">°</span>

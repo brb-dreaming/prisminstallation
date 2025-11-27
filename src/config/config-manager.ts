@@ -2,7 +2,7 @@
  * Configuration Manager - Save and load scene configurations
  */
 
-import type { Prism } from '../scene/prism';
+import type { Prism, PrismShape } from '../scene/prism';
 import type { Wall } from '../scene/wall';
 
 export interface PrismConfigData {
@@ -14,6 +14,10 @@ export interface PrismConfigData {
   material: string;
   sideLength: number;
   height: number;
+  // Shape properties
+  shape?: PrismShape;
+  apexAngle?: number;
+  aspectRatio?: number;
 }
 
 export interface WallConfigData {
@@ -78,7 +82,11 @@ export function extractPrismConfig(prism: Prism): PrismConfigData {
     type: prism.config.type,
     material: prism.config.material.name,
     sideLength: prism.config.sideLength,
-    height: prism.config.height
+    height: prism.config.height,
+    // Shape properties
+    shape: prism.config.shape,
+    apexAngle: prism.config.apexAngle,
+    aspectRatio: prism.config.aspectRatio
   };
 }
 

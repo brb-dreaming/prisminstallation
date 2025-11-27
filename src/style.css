@@ -483,6 +483,66 @@ body.white-light-achieved #convergence-value.white-light {
   color: var(--accent);
 }
 
+/* Shape Selector */
+.shape-selector {
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.shape-selector label {
+  display: block;
+  font-size: 9px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+
+.shape-select {
+  width: 100%;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 8px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: border-color 0.2s ease;
+}
+
+.shape-select:focus {
+  outline: none;
+  border-color: var(--accent-dim);
+}
+
+.shape-select:hover {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.shape-select option {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  padding: 8px;
+}
+
+.shape-description {
+  font-size: 9px;
+  color: var(--text-muted);
+  margin-top: 6px;
+  line-height: 1.4;
+  font-style: italic;
+}
+
+/* Prism Shape Display in Selection */
+#prism-info .prism-shape {
+  font-size: 11px;
+  color: var(--accent);
+  opacity: 0.85;
+  margin-bottom: 4px;
+}
+
 /* Add Buttons */
 .add-buttons {
   display: flex;

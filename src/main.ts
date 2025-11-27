@@ -14,8 +14,8 @@ import './style.css';
 import { GLASS_MATERIALS, getDispersionTable } from './optics/refraction';
 import { COLOR_GROUPS } from './optics/spectrum';
 import { OpticalSystem } from './optics/optical-system';
-import type { Prism } from './scene/prism';
-import { createSplitterPrism, createDirectorPrism } from './scene/prism';
+import type { Prism, PrismShape } from './scene/prism';
+import { createSplitterPrism, createDirectorPrism, createPrism, PRISM_SHAPE_INFO } from './scene/prism';
 import { Wall, createWall } from './scene/wall';
 import { LightSource } from './scene/light-source';
 import { LightBeamRenderer, BeamEndpoints } from './scene/light-beam';
@@ -248,9 +248,9 @@ class PrismSimulator {
       downloadBlueprintJSON(data);
     };
     
-    // Add prism callback
-    this.ui.onAddPrism = () => {
-      this.addNewPrism();
+    // Add prism callback (with shape selection)
+    this.ui.onAddPrism = (shape: PrismShape) => {
+      this.addNewPrism(shape);
     };
     
     // Add wall callback
@@ -459,11 +459,18 @@ class PrismSimulator {
         prismConfig.position.z
       );
       
-      const prism = createDirectorPrism(
-        position,
-        prismConfig.targetWavelength || 550,
-        GLASS_MATERIALS.BK7
-      );
+      // Use shape from config, defaulting to equilateral for backward compatibility
+      const shape: PrismShape = prismConfig.shape || 'equilateral';
+      
+      const prism = createPrism(position, shape, {
+        material: GLASS_MATERIALS.BK7,
+        targetWavelength: prismConfig.targetWavelength || 550,
+        type: 'director',
+        sideLength: prismConfig.sideLength,
+        height: prismConfig.height,
+        apexAngle: prismConfig.apexAngle,
+        aspectRatio: prismConfig.aspectRatio
+      });
       
       prism.setRotation(prismConfig.rotationY);
       
@@ -553,26 +560,39 @@ class PrismSimulator {
   }
   
   /**
-   * Add a new director prism to the scene
+   * Add a new director prism to the scene with specified shape
    */
-  private addNewPrism(): void {
+  private addNewPrism(shape: PrismShape = 'equilateral'): void {
     this.prismCounter++;
     
     // Find a position near the selected object, or use default search
     const position = this.findSpawnPosition();
     
-    // Create prism with a neutral target wavelength
-    const prism = createDirectorPrism(
-      position,
-      550,  // Green center wavelength
-      GLASS_MATERIALS.BK7
-    );
+    // Get shape-specific default apex angle for wedge/isosceles
+    const shapeOptions: { apexAngle?: number; aspectRatio?: number } = {};
+    if (shape === 'wedge') {
+      shapeOptions.apexAngle = Math.PI / 12;  // 15° for wedge
+    } else if (shape === 'isosceles') {
+      shapeOptions.apexAngle = Math.PI / 4;   // 45° for isosceles
+    } else if (shape === 'rectangular') {
+      shapeOptions.aspectRatio = 1.5;
+    }
     
-    // Set a default rotation
-    prism.setRotation(Math.PI / 4);
+    // Create prism with specified shape
+    const prism = createPrism(position, shape, {
+      material: GLASS_MATERIALS.BK7,
+      targetWavelength: 550,  // Green center wavelength
+      type: 'director',
+      ...shapeOptions
+    });
     
-    // Give it a generic color group
-    (prism as any).colorGroup = { name: `Director ${this.prismCounter}` };
+    // Set a default rotation based on shape
+    const defaultRotation = shape === 'right-angle' ? Math.PI / 2 : Math.PI / 4;
+    prism.setRotation(defaultRotation);
+    
+    // Give it a descriptive name including shape
+    const shapeInfo = PRISM_SHAPE_INFO[shape];
+    (prism as any).colorGroup = { name: `${shapeInfo.name} ${this.prismCounter}` };
     
     // Add to scene and tracking arrays
     this.directorPrisms.push(prism);
@@ -586,7 +606,7 @@ class PrismSimulator {
     // Update rays
     this.needsRayUpdate = true;
     
-    console.log(`Added new prism at position (${position.x}, ${position.z})`);
+    console.log(`Added new ${shape} prism at position (${position.x}, ${position.z})`);
   }
   
   /**

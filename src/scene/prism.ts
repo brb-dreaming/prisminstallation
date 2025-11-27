@@ -1,6 +1,7 @@
 /**
  * Prism geometry and physics
  * Handles both visual representation and optical calculations
+ * Supports multiple prism shapes for diverse optical effects
  */
 
 import * as THREE from 'three';
@@ -9,10 +10,70 @@ import { Ray } from '../optics/ray';
 import type { GlassMaterial } from '../optics/refraction';
 import { GLASS_MATERIALS, refractRay, reflect } from '../optics/refraction';
 
+/**
+ * Available prism shapes with different optical properties
+ */
+export type PrismShape = 
+  | 'equilateral'    // Classic 60° prism - maximum dispersion
+  | 'right-angle'    // 45-90-45° - total internal reflection, 90° beam deflection
+  | 'isosceles'      // Custom apex angle - tunable dispersion
+  | 'wedge'          // Thin angle - subtle beam steering
+  | 'rectangular'    // Glass block - double refraction, educational
+  | 'pentagonal'     // 90° deviation without image inversion
+  | 'dove';          // Trapezoidal - image rotation effects
+
+/**
+ * Human-readable info about each prism shape
+ */
+export const PRISM_SHAPE_INFO: Record<PrismShape, { name: string; description: string; icon: string }> = {
+  equilateral: { 
+    name: 'Equilateral', 
+    description: '60° apex - classic rainbow maker with maximum dispersion',
+    icon: '△'
+  },
+  'right-angle': { 
+    name: 'Right Angle', 
+    description: '45-90-45° - perfect for 90° beam deflection via TIR',
+    icon: '◢'
+  },
+  isosceles: { 
+    name: 'Isosceles', 
+    description: 'Custom apex angle for tunable dispersion',
+    icon: '▲'
+  },
+  wedge: { 
+    name: 'Wedge', 
+    description: 'Thin wedge for subtle beam steering',
+    icon: '◁'
+  },
+  rectangular: { 
+    name: 'Glass Block', 
+    description: 'Rectangular block - parallel beam displacement',
+    icon: '▭'
+  },
+  pentagonal: { 
+    name: 'Pentagonal', 
+    description: '5-sided - 90° deviation, used in periscopes',
+    icon: '⬠'
+  },
+  dove: { 
+    name: 'Dove', 
+    description: 'Trapezoidal - image rotation and inversion',
+    icon: '⏢'
+  }
+};
+
 export interface PrismConfig {
+  // Shape type
+  shape: PrismShape;
+  
   // Physical dimensions (in centimeters for real-world scale)
-  sideLength: number;  // Equilateral triangle side length
+  sideLength: number;  // Base reference size
   height: number;      // Prism height (extrusion depth)
+  
+  // Shape-specific parameters
+  apexAngle?: number;  // For isosceles/wedge shapes (radians)
+  aspectRatio?: number; // For rectangular (length/width ratio)
   
   // Material
   material: GlassMaterial;
@@ -29,7 +90,7 @@ export interface PrismConfig {
 }
 
 /**
- * Represents a triangular prism for light refraction
+ * Represents a prism of any supported shape for light refraction
  */
 export class Prism {
   config: PrismConfig;
@@ -37,6 +98,10 @@ export class Prism {
   
   // Cached world-space triangles for ray intersection
   private triangles: { v0: THREE.Vector3; v1: THREE.Vector3; v2: THREE.Vector3; normal: THREE.Vector3 }[] = [];
+  
+  // Cached local vertices for triangle updates
+  private localVertices: THREE.Vector3[] = [];
+  private faceIndices: number[][] = [];
   
   // Interaction state
   isSelected: boolean = false;
@@ -46,7 +111,8 @@ export class Prism {
   private selectionRing: THREE.LineLoop | null = null;
   
   constructor(config: PrismConfig) {
-    this.config = { ...config };
+    // Default shape to equilateral for backward compatibility
+    this.config = { shape: 'equilateral', ...config };
     this.mesh = this.createMesh();
     this.createSelectionIndicator();
     this.updateTriangles();
@@ -54,19 +120,10 @@ export class Prism {
   
   /**
    * Create a subtle ring indicator for selection state
+   * Adapts to the prism shape
    */
   private createSelectionIndicator(): void {
-    const { sideLength } = this.config;
-    const h = (sideLength * Math.sqrt(3)) / 2;
-    
-    // Create a triangular ring that follows the prism's base shape, slightly larger
-    const scale = 1.25;
-    const points = [
-      new THREE.Vector3(0, 0, h * 2/3 * scale),
-      new THREE.Vector3(-sideLength/2 * scale, 0, -h/3 * scale),
-      new THREE.Vector3(sideLength/2 * scale, 0, -h/3 * scale),
-      new THREE.Vector3(0, 0, h * 2/3 * scale), // Close the loop
-    ];
+    const points = this.getSelectionRingPoints();
     
     const geometry = new THREE.BufferGeometry().setFromPoints(points);
     const material = new THREE.LineBasicMaterial({
@@ -83,17 +140,122 @@ export class Prism {
   }
   
   /**
+   * Get selection ring points based on shape
+   */
+  private getSelectionRingPoints(): THREE.Vector3[] {
+    const { sideLength, shape } = this.config;
+    const scale = 1.25;
+    
+    switch (shape) {
+      case 'rectangular': {
+        const width = sideLength;
+        const depth = sideLength * (this.config.aspectRatio || 1.5);
+        return [
+          new THREE.Vector3(-width/2 * scale, 0, -depth/2 * scale),
+          new THREE.Vector3(width/2 * scale, 0, -depth/2 * scale),
+          new THREE.Vector3(width/2 * scale, 0, depth/2 * scale),
+          new THREE.Vector3(-width/2 * scale, 0, depth/2 * scale),
+          new THREE.Vector3(-width/2 * scale, 0, -depth/2 * scale),
+        ];
+      }
+      
+      case 'pentagonal': {
+        // Regular pentagon outline
+        const r = sideLength * 0.6 * scale;
+        const points: THREE.Vector3[] = [];
+        for (let i = 0; i <= 5; i++) {
+          const angle = (i * 2 * Math.PI / 5) - Math.PI / 2;
+          points.push(new THREE.Vector3(Math.cos(angle) * r, 0, Math.sin(angle) * r));
+        }
+        return points;
+      }
+      
+      case 'dove': {
+        // Trapezoidal outline
+        const baseWidth = sideLength * scale;
+        const topWidth = sideLength * 0.6 * scale;
+        const depth = sideLength * 1.2 * scale;
+        return [
+          new THREE.Vector3(-baseWidth/2, 0, -depth/2),
+          new THREE.Vector3(baseWidth/2, 0, -depth/2),
+          new THREE.Vector3(topWidth/2, 0, depth/2),
+          new THREE.Vector3(-topWidth/2, 0, depth/2),
+          new THREE.Vector3(-baseWidth/2, 0, -depth/2),
+        ];
+      }
+      
+      case 'wedge': {
+        // Thin triangle
+        const apexAngle = this.config.apexAngle || Math.PI / 12; // 15° default
+        const baseWidth = sideLength * Math.tan(apexAngle / 2) * 2 * scale;
+        const depth = sideLength * scale;
+        return [
+          new THREE.Vector3(0, 0, depth/2),
+          new THREE.Vector3(-baseWidth/2, 0, -depth/2),
+          new THREE.Vector3(baseWidth/2, 0, -depth/2),
+          new THREE.Vector3(0, 0, depth/2),
+        ];
+      }
+      
+      case 'right-angle': {
+        // Right triangle
+        const h = sideLength * scale;
+        return [
+          new THREE.Vector3(0, 0, h/2),
+          new THREE.Vector3(-h/2, 0, -h/2),
+          new THREE.Vector3(h/2, 0, -h/2),
+          new THREE.Vector3(0, 0, h/2),
+        ];
+      }
+      
+      case 'isosceles': {
+        // Isosceles triangle with custom apex
+        const apexAngle = this.config.apexAngle || Math.PI / 3;
+        const baseWidth = sideLength * scale;
+        const depth = (baseWidth / 2) / Math.tan(apexAngle / 2);
+        return [
+          new THREE.Vector3(0, 0, depth * 2/3),
+          new THREE.Vector3(-baseWidth/2, 0, -depth/3),
+          new THREE.Vector3(baseWidth/2, 0, -depth/3),
+          new THREE.Vector3(0, 0, depth * 2/3),
+        ];
+      }
+      
+      default: {
+        // Equilateral triangle
+        const h = (sideLength * Math.sqrt(3)) / 2;
+        return [
+          new THREE.Vector3(0, 0, h * 2/3 * scale),
+          new THREE.Vector3(-sideLength/2 * scale, 0, -h/3 * scale),
+          new THREE.Vector3(sideLength/2 * scale, 0, -h/3 * scale),
+          new THREE.Vector3(0, 0, h * 2/3 * scale),
+        ];
+      }
+    }
+  }
+  
+  /**
    * Create the Three.js mesh for the prism
    */
   private createMesh(): THREE.Mesh {
-    const { sideLength, height } = this.config;
+    const { sideLength, height, shape } = this.config;
     
-    // Create geometry manually for precise control
-    const geometry = this.createPrismGeometry(sideLength, height);
+    // Create geometry based on shape
+    const geometry = this.createShapeGeometry(shape, sideLength, height);
     
-    // Glass-like material
+    // Glass-like material with subtle tint based on shape for visual distinction
+    const shapeColors: Record<PrismShape, number> = {
+      equilateral: 0xffffff,
+      'right-angle': 0xfff8f0,
+      isosceles: 0xf8fff8,
+      wedge: 0xf0f8ff,
+      rectangular: 0xfff0f8,
+      pentagonal: 0xf8f0ff,
+      dove: 0xfffff0,
+    };
+    
     const material = new THREE.MeshPhysicalMaterial({
-      color: 0xffffff,
+      color: shapeColors[shape] || 0xffffff,
       metalness: 0,
       roughness: 0.05,
       transmission: 0.9,
@@ -118,68 +280,36 @@ export class Prism {
   }
   
   /**
-   * Create triangular prism geometry
+   * Create geometry based on prism shape
    */
-  private createPrismGeometry(sideLength: number, height: number): THREE.BufferGeometry {
+  private createShapeGeometry(shape: PrismShape, sideLength: number, height: number): THREE.BufferGeometry {
+    switch (shape) {
+      case 'right-angle':
+        return this.createRightAngleGeometry(sideLength, height);
+      case 'isosceles':
+        return this.createIsoscelesGeometry(sideLength, height, this.config.apexAngle || Math.PI / 3);
+      case 'wedge':
+        return this.createWedgeGeometry(sideLength, height, this.config.apexAngle || Math.PI / 12);
+      case 'rectangular':
+        return this.createRectangularGeometry(sideLength, height, this.config.aspectRatio || 1.5);
+      case 'pentagonal':
+        return this.createPentagonalGeometry(sideLength, height);
+      case 'dove':
+        return this.createDoveGeometry(sideLength, height);
+      default:
+        return this.createEquilateralGeometry(sideLength, height);
+    }
+  }
+  
+  /**
+   * Create equilateral triangular prism geometry (60° apex)
+   */
+  private createEquilateralGeometry(sideLength: number, height: number): THREE.BufferGeometry {
     const h = (sideLength * Math.sqrt(3)) / 2; // Triangle height
     const halfH = height / 2;
     
     // Equilateral triangle vertices (in XZ plane, centered)
-    const v0 = new THREE.Vector3(0, 0, h * 2/3);           // Front vertex
-    const v1 = new THREE.Vector3(-sideLength/2, 0, -h/3); // Back left
-    const v2 = new THREE.Vector3(sideLength/2, 0, -h/3);  // Back right
-    
-    // 6 vertices: 3 on bottom (y=-halfH), 3 on top (y=+halfH)
-    const vertices = new Float32Array([
-      // Bottom triangle
-      v0.x, -halfH, v0.z,  // 0
-      v1.x, -halfH, v1.z,  // 1
-      v2.x, -halfH, v2.z,  // 2
-      // Top triangle
-      v0.x, halfH, v0.z,   // 3
-      v1.x, halfH, v1.z,   // 4
-      v2.x, halfH, v2.z,   // 5
-    ]);
-    
-    // Indices for faces (CCW winding for outward-facing normals)
-    const indices = new Uint16Array([
-      // Bottom face (normal pointing down)
-      0, 2, 1,
-      // Top face (normal pointing up)
-      3, 4, 5,
-      // Side faces
-      // Front-left face (v0-v1 edge)
-      0, 1, 4,
-      0, 4, 3,
-      // Front-right face (v0-v2 edge)
-      0, 3, 5,
-      0, 5, 2,
-      // Back face (v1-v2 edge)
-      1, 2, 5,
-      1, 5, 4,
-    ]);
-    
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
-    geometry.setIndex(new THREE.BufferAttribute(indices, 1));
-    geometry.computeVertexNormals();
-    
-    return geometry;
-  }
-  
-  /**
-   * Update cached world-space triangles for ray intersection
-   */
-  updateTriangles(): void {
-    this.triangles = [];
-    this.mesh.updateMatrixWorld(true);
-    
-    const { sideLength, height } = this.config;
-    const h = (sideLength * Math.sqrt(3)) / 2;
-    const halfH = height / 2;
-    
-    // Local vertices
-    const localVerts = [
+    this.localVertices = [
       new THREE.Vector3(0, -halfH, h * 2/3),           // 0 - bottom front
       new THREE.Vector3(-sideLength/2, -halfH, -h/3), // 1 - bottom back-left
       new THREE.Vector3(sideLength/2, -halfH, -h/3),  // 2 - bottom back-right
@@ -188,33 +318,266 @@ export class Prism {
       new THREE.Vector3(sideLength/2, halfH, -h/3),  // 5 - top back-right
     ];
     
-    // Transform to world space
-    const worldVerts = localVerts.map(v => v.clone().applyMatrix4(this.mesh.matrixWorld));
+    // Face indices (each sub-array is a triangle)
+    this.faceIndices = [
+      [0, 2, 1],    // Bottom face
+      [3, 4, 5],    // Top face
+      [0, 1, 4], [0, 4, 3],  // Front-left side
+      [0, 3, 5], [0, 5, 2],  // Front-right side
+      [1, 2, 5], [1, 5, 4],  // Back side
+    ];
     
-    // Helper to create triangle and compute outward normal
-    const addTriangle = (i0: number, i1: number, i2: number) => {
+    return this.buildGeometryFromVertices();
+  }
+  
+  /**
+   * Create right-angle (45-90-45) prism geometry
+   * Perfect for total internal reflection and 90° beam deflection
+   */
+  private createRightAngleGeometry(sideLength: number, height: number): THREE.BufferGeometry {
+    const halfH = height / 2;
+    const s = sideLength;
+    
+    // Right triangle: 90° at one corner, 45° at the other two
+    // Hypotenuse faces the incoming light for TIR applications
+    this.localVertices = [
+      new THREE.Vector3(0, -halfH, s/2),           // 0 - bottom apex (90° corner)
+      new THREE.Vector3(-s/2, -halfH, -s/2),      // 1 - bottom back-left (45°)
+      new THREE.Vector3(s/2, -halfH, -s/2),       // 2 - bottom back-right (45°)
+      new THREE.Vector3(0, halfH, s/2),           // 3 - top apex
+      new THREE.Vector3(-s/2, halfH, -s/2),      // 4 - top back-left
+      new THREE.Vector3(s/2, halfH, -s/2),       // 5 - top back-right
+    ];
+    
+    this.faceIndices = [
+      [0, 2, 1],    // Bottom face
+      [3, 4, 5],    // Top face
+      [0, 1, 4], [0, 4, 3],  // Left side (45° face)
+      [0, 3, 5], [0, 5, 2],  // Right side (45° face)
+      [1, 2, 5], [1, 5, 4],  // Hypotenuse (back face)
+    ];
+    
+    return this.buildGeometryFromVertices();
+  }
+  
+  /**
+   * Create isosceles triangular prism with custom apex angle
+   */
+  private createIsoscelesGeometry(sideLength: number, height: number, apexAngle: number): THREE.BufferGeometry {
+    const halfH = height / 2;
+    const baseWidth = sideLength;
+    const triangleHeight = (baseWidth / 2) / Math.tan(apexAngle / 2);
+    
+    this.localVertices = [
+      new THREE.Vector3(0, -halfH, triangleHeight * 2/3),           // 0 - bottom apex
+      new THREE.Vector3(-baseWidth/2, -halfH, -triangleHeight/3), // 1 - bottom left
+      new THREE.Vector3(baseWidth/2, -halfH, -triangleHeight/3),  // 2 - bottom right
+      new THREE.Vector3(0, halfH, triangleHeight * 2/3),           // 3 - top apex
+      new THREE.Vector3(-baseWidth/2, halfH, -triangleHeight/3), // 4 - top left
+      new THREE.Vector3(baseWidth/2, halfH, -triangleHeight/3),  // 5 - top right
+    ];
+    
+    this.faceIndices = [
+      [0, 2, 1],    // Bottom
+      [3, 4, 5],    // Top
+      [0, 1, 4], [0, 4, 3],  // Left side
+      [0, 3, 5], [0, 5, 2],  // Right side
+      [1, 2, 5], [1, 5, 4],  // Back (base)
+    ];
+    
+    return this.buildGeometryFromVertices();
+  }
+  
+  /**
+   * Create thin wedge prism for subtle beam steering
+   */
+  private createWedgeGeometry(sideLength: number, height: number, apexAngle: number): THREE.BufferGeometry {
+    const halfH = height / 2;
+    const depth = sideLength;
+    const baseWidth = depth * Math.tan(apexAngle / 2) * 2;
+    
+    // Very thin triangular cross-section
+    this.localVertices = [
+      new THREE.Vector3(0, -halfH, depth/2),            // 0 - bottom apex (thin end)
+      new THREE.Vector3(-baseWidth/2, -halfH, -depth/2), // 1 - bottom back-left
+      new THREE.Vector3(baseWidth/2, -halfH, -depth/2),  // 2 - bottom back-right
+      new THREE.Vector3(0, halfH, depth/2),             // 3 - top apex
+      new THREE.Vector3(-baseWidth/2, halfH, -depth/2), // 4 - top back-left
+      new THREE.Vector3(baseWidth/2, halfH, -depth/2),  // 5 - top back-right
+    ];
+    
+    this.faceIndices = [
+      [0, 2, 1],    // Bottom
+      [3, 4, 5],    // Top
+      [0, 1, 4], [0, 4, 3],  // Left face
+      [0, 3, 5], [0, 5, 2],  // Right face
+      [1, 2, 5], [1, 5, 4],  // Back (wide) face
+    ];
+    
+    return this.buildGeometryFromVertices();
+  }
+  
+  /**
+   * Create rectangular glass block (parallel faces cause beam displacement without deviation)
+   */
+  private createRectangularGeometry(sideLength: number, height: number, aspectRatio: number): THREE.BufferGeometry {
+    const halfH = height / 2;
+    const width = sideLength;
+    const depth = sideLength * aspectRatio;
+    
+    // 8 vertices for a box
+    this.localVertices = [
+      new THREE.Vector3(-width/2, -halfH, -depth/2), // 0 - bottom back-left
+      new THREE.Vector3(width/2, -halfH, -depth/2),  // 1 - bottom back-right
+      new THREE.Vector3(width/2, -halfH, depth/2),   // 2 - bottom front-right
+      new THREE.Vector3(-width/2, -halfH, depth/2),  // 3 - bottom front-left
+      new THREE.Vector3(-width/2, halfH, -depth/2),  // 4 - top back-left
+      new THREE.Vector3(width/2, halfH, -depth/2),   // 5 - top back-right
+      new THREE.Vector3(width/2, halfH, depth/2),    // 6 - top front-right
+      new THREE.Vector3(-width/2, halfH, depth/2),   // 7 - top front-left
+    ];
+    
+    // 12 triangles (2 per face, 6 faces)
+    this.faceIndices = [
+      [0, 1, 2], [0, 2, 3],  // Bottom
+      [4, 6, 5], [4, 7, 6],  // Top
+      [0, 4, 5], [0, 5, 1],  // Back
+      [2, 6, 7], [2, 7, 3],  // Front
+      [0, 3, 7], [0, 7, 4],  // Left
+      [1, 5, 6], [1, 6, 2],  // Right
+    ];
+    
+    return this.buildGeometryFromVertices();
+  }
+  
+  /**
+   * Create pentagonal prism (5-sided cross-section)
+   * Used in periscopes for 90° deviation without image inversion
+   */
+  private createPentagonalGeometry(sideLength: number, height: number): THREE.BufferGeometry {
+    const halfH = height / 2;
+    const r = sideLength * 0.5;  // Circumradius
+    
+    // Regular pentagon vertices
+    const pentVerts: THREE.Vector3[] = [];
+    for (let i = 0; i < 5; i++) {
+      const angle = (i * 2 * Math.PI / 5) - Math.PI / 2; // Start from top
+      pentVerts.push(new THREE.Vector3(Math.cos(angle) * r, 0, Math.sin(angle) * r));
+    }
+    
+    // 10 vertices: 5 bottom, 5 top
+    this.localVertices = [
+      ...pentVerts.map(v => new THREE.Vector3(v.x, -halfH, v.z)),
+      ...pentVerts.map(v => new THREE.Vector3(v.x, halfH, v.z)),
+    ];
+    
+    // Triangulate pentagon faces (fan from center for simplicity, but we use ear clipping)
+    // Bottom pentagon: 0,1,2,3,4  Top pentagon: 5,6,7,8,9
+    this.faceIndices = [
+      // Bottom pentagon (CCW when viewed from below = CW from above)
+      [0, 2, 1], [0, 3, 2], [0, 4, 3],
+      // Top pentagon (CCW when viewed from above)
+      [5, 6, 7], [5, 7, 8], [5, 8, 9],
+      // Side faces (5 rectangular sides, each as 2 triangles)
+      [0, 1, 6], [0, 6, 5],
+      [1, 2, 7], [1, 7, 6],
+      [2, 3, 8], [2, 8, 7],
+      [3, 4, 9], [3, 9, 8],
+      [4, 0, 5], [4, 5, 9],
+    ];
+    
+    return this.buildGeometryFromVertices();
+  }
+  
+  /**
+   * Create Dove prism geometry (trapezoidal cross-section)
+   * Used for image rotation - rotating the prism rotates the image at 2x rate
+   */
+  private createDoveGeometry(sideLength: number, height: number): THREE.BufferGeometry {
+    const halfH = height / 2;
+    const baseWidth = sideLength;
+    const topWidth = sideLength * 0.6;
+    const depth = sideLength * 1.2;
+    
+    // Trapezoid vertices (4 corners on each level)
+    this.localVertices = [
+      // Bottom trapezoid
+      new THREE.Vector3(-baseWidth/2, -halfH, -depth/2),  // 0 - back-left (wide)
+      new THREE.Vector3(baseWidth/2, -halfH, -depth/2),   // 1 - back-right (wide)
+      new THREE.Vector3(topWidth/2, -halfH, depth/2),     // 2 - front-right (narrow)
+      new THREE.Vector3(-topWidth/2, -halfH, depth/2),    // 3 - front-left (narrow)
+      // Top trapezoid
+      new THREE.Vector3(-baseWidth/2, halfH, -depth/2),   // 4 - back-left
+      new THREE.Vector3(baseWidth/2, halfH, -depth/2),    // 5 - back-right
+      new THREE.Vector3(topWidth/2, halfH, depth/2),      // 6 - front-right
+      new THREE.Vector3(-topWidth/2, halfH, depth/2),     // 7 - front-left
+    ];
+    
+    this.faceIndices = [
+      // Bottom trapezoid
+      [0, 1, 2], [0, 2, 3],
+      // Top trapezoid
+      [4, 6, 5], [4, 7, 6],
+      // Back face (wide)
+      [0, 4, 5], [0, 5, 1],
+      // Front face (narrow)
+      [2, 6, 7], [2, 7, 3],
+      // Left angled face
+      [0, 3, 7], [0, 7, 4],
+      // Right angled face
+      [1, 5, 6], [1, 6, 2],
+    ];
+    
+    return this.buildGeometryFromVertices();
+  }
+  
+  /**
+   * Build Three.js geometry from local vertices and face indices
+   */
+  private buildGeometryFromVertices(): THREE.BufferGeometry {
+    const vertices: number[] = [];
+    for (const v of this.localVertices) {
+      vertices.push(v.x, v.y, v.z);
+    }
+    
+    const indices: number[] = [];
+    for (const face of this.faceIndices) {
+      indices.push(...face);
+    }
+    
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    
+    return geometry;
+  }
+  
+  /**
+   * Update cached world-space triangles for ray intersection
+   * Works with any prism shape using the cached localVertices and faceIndices
+   */
+  updateTriangles(): void {
+    this.triangles = [];
+    this.mesh.updateMatrixWorld(true);
+    
+    // Transform local vertices to world space
+    const worldVerts = this.localVertices.map(v => v.clone().applyMatrix4(this.mesh.matrixWorld));
+    
+    // Create triangles from face indices
+    for (const face of this.faceIndices) {
+      const [i0, i1, i2] = face;
       const v0 = worldVerts[i0];
       const v1 = worldVerts[i1];
       const v2 = worldVerts[i2];
+      
+      // Compute outward normal
       const edge1 = v1.clone().sub(v0);
       const edge2 = v2.clone().sub(v0);
       const normal = edge1.cross(edge2).normalize();
+      
       this.triangles.push({ v0, v1, v2, normal });
-    };
-    
-    // Bottom face (normal -Y) - CCW when viewed from below
-    addTriangle(0, 1, 2);
-    // Top face (normal +Y) - CCW when viewed from above
-    addTriangle(3, 5, 4);
-    // Front-left side face (v0-v1 edge, normal outward-left)
-    addTriangle(0, 3, 4);
-    addTriangle(0, 4, 1);
-    // Front-right side face (v0-v2 edge, normal outward-right)
-    addTriangle(0, 2, 5);
-    addTriangle(0, 5, 3);
-    // Back face (v1-v2 edge, normal outward-back)
-    addTriangle(1, 4, 5);
-    addTriangle(1, 5, 2);
+    }
   }
   
   /**
@@ -449,11 +812,14 @@ export class Prism {
    * Export specs for blueprint
    */
   getSpecs(): object {
+    const shapeInfo = PRISM_SHAPE_INFO[this.config.shape];
     return {
       type: this.config.type,
+      shape: shapeInfo?.name || this.config.shape,
       material: this.config.material.name,
       sideLength: `${this.config.sideLength} cm`,
       height: `${this.config.height} cm`,
+      ...(this.config.apexAngle && { apexAngle: `${(this.config.apexAngle * 180 / Math.PI).toFixed(1)}°` }),
       position: {
         x: `${this.config.position.x.toFixed(2)} cm`,
         y: `${this.config.position.y.toFixed(2)} cm`,
@@ -462,16 +828,24 @@ export class Prism {
       rotation: `${this.getRotationDegrees().toFixed(1)}°`
     };
   }
+  
+  /**
+   * Get the prism shape
+   */
+  getShape(): PrismShape {
+    return this.config.shape;
+  }
 }
 
 /**
- * Create a splitter prism
+ * Create a splitter prism (equilateral for maximum dispersion)
  */
 export function createSplitterPrism(
   position: THREE.Vector3,
   material: GlassMaterial = GLASS_MATERIALS.SF11
 ): Prism {
   return new Prism({
+    shape: 'equilateral',
     sideLength: 5,
     height: 8,
     material,
@@ -482,21 +856,63 @@ export function createSplitterPrism(
 }
 
 /**
- * Create a director prism
- * Larger size to catch broader color bands from the dispersed spectrum
+ * Create a director prism with specified shape
+ * Default is equilateral, but supports all shapes
  */
 export function createDirectorPrism(
   position: THREE.Vector3,
   targetWavelength: number,
-  material: GlassMaterial = GLASS_MATERIALS.BK7
+  material: GlassMaterial = GLASS_MATERIALS.BK7,
+  shape: PrismShape = 'equilateral',
+  options?: { apexAngle?: number; aspectRatio?: number }
 ): Prism {
   return new Prism({
+    shape,
     sideLength: 4.5,  // Larger to catch wider color bands
     height: 10,       // Taller for better beam interception
     material,
     position,
     rotationY: 0,
     type: 'director',
-    targetWavelength
+    targetWavelength,
+    apexAngle: options?.apexAngle,
+    aspectRatio: options?.aspectRatio
   });
+}
+
+/**
+ * Create a prism with any shape and configuration
+ */
+export function createPrism(
+  position: THREE.Vector3,
+  shape: PrismShape,
+  options?: {
+    material?: GlassMaterial;
+    sideLength?: number;
+    height?: number;
+    apexAngle?: number;
+    aspectRatio?: number;
+    type?: 'splitter' | 'director';
+    targetWavelength?: number;
+  }
+): Prism {
+  return new Prism({
+    shape,
+    sideLength: options?.sideLength || 4.5,
+    height: options?.height || 10,
+    material: options?.material || GLASS_MATERIALS.BK7,
+    position,
+    rotationY: 0,
+    type: options?.type || 'director',
+    targetWavelength: options?.targetWavelength,
+    apexAngle: options?.apexAngle,
+    aspectRatio: options?.aspectRatio
+  });
+}
+
+/**
+ * Get all available prism shapes
+ */
+export function getAvailableShapes(): PrismShape[] {
+  return ['equilateral', 'right-angle', 'isosceles', 'wedge', 'rectangular', 'pentagonal', 'dove'];
 }
