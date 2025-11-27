@@ -1,0 +1,442 @@
+/* Prism Light Simulator - Minimal Dark UI */
+
+:root {
+  --bg-primary: #0a0a0b;
+  --bg-secondary: #111113;
+  --bg-tertiary: #1a1a1d;
+  --text-primary: #e8e6e3;
+  --text-secondary: #8a8a8d;
+  --text-muted: #4a4a4d;
+  --accent: #d4af37;
+  --accent-dim: rgba(212, 175, 55, 0.3);
+  --border: rgba(255, 255, 255, 0.06);
+  
+  --font-display: 'Cormorant Garamond', Georgia, serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 300;
+}
+
+#app {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+#canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* UI Overlay */
+#ui-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 32px;
+}
+
+#ui-overlay > * {
+  pointer-events: auto;
+}
+
+/* Header */
+#header {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  pointer-events: none;
+}
+
+#header h1 {
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 300;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-primary);
+}
+
+#header .subtitle {
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Info Panel */
+#info-panel {
+  position: absolute;
+  top: 32px;
+  right: 32px;
+  width: 220px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.panel-section h3 {
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.panel-section .label {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+#prism-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#prism-info .value {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+#prism-info .angle {
+  color: var(--accent);
+  font-size: 18px;
+  font-family: var(--font-display);
+  font-weight: 400;
+}
+
+/* Convergence Meter */
+#convergence-meter {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.meter-bar {
+  flex: 1;
+  height: 2px;
+  background: var(--bg-tertiary);
+  position: relative;
+  overflow: hidden;
+}
+
+.meter-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, 
+    #ff6b6b 0%, 
+    #ffd93d 25%, 
+    #6bcb77 50%, 
+    #4d96ff 75%, 
+    #9b59b6 100%
+  );
+  transition: width 0.3s ease;
+}
+
+#convergence-value {
+  font-size: 11px;
+  color: var(--text-secondary);
+  min-width: 36px;
+  text-align: right;
+}
+
+/* Controls Hint */
+#controls-hint {
+  display: flex;
+  gap: 24px;
+  justify-content: center;
+  pointer-events: none;
+}
+
+#controls-hint span {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+/* Solved State */
+body.solved #convergence-value {
+  color: var(--accent);
+}
+
+body.solved .meter-fill {
+  box-shadow: 0 0 12px var(--accent-dim);
+}
+
+/* White Light Achievement - Special Victory State */
+body.white-light-achieved {
+  animation: white-flash 0.5s ease-out;
+}
+
+@keyframes white-flash {
+  0% { background: #0a0a0b; }
+  30% { background: #1a1a1d; }
+  100% { background: #0a0a0b; }
+}
+
+body.white-light-achieved #convergence-value {
+  color: #fff;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
+  font-weight: 500;
+}
+
+body.white-light-achieved #convergence-value.white-light {
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0%, 100% { 
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
+    opacity: 1;
+  }
+  50% { 
+    text-shadow: 0 0 20px rgba(255, 255, 255, 1), 0 0 40px rgba(212, 175, 55, 0.5);
+    opacity: 0.9;
+  }
+}
+
+.meter-fill.white-light {
+  background: linear-gradient(90deg, 
+    rgba(255, 255, 255, 0.9) 0%, 
+    rgba(255, 253, 245, 1) 50%,
+    rgba(255, 255, 255, 0.9) 100%
+  );
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.6), 0 0 40px rgba(212, 175, 55, 0.3);
+  animation: white-glow 1s ease-in-out infinite;
+}
+
+@keyframes white-glow {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.6), 0 0 40px rgba(212, 175, 55, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(255, 255, 255, 0.9), 0 0 60px rgba(212, 175, 55, 0.5);
+  }
+}
+
+/* Color group indicators */
+#prism-info .prism-name {
+  font-size: 14px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+#prism-info .material {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* Prism Selection Highlight */
+.prism-selected #prism-info .label {
+  display: none;
+}
+
+/* Mode Toggle */
+.mode-toggle {
+  display: flex;
+  gap: 4px;
+  background: var(--bg-primary);
+  padding: 4px;
+  border-radius: 4px;
+}
+
+.mode-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-radius: 3px;
+}
+
+.mode-btn .mode-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.mode-btn .mode-label {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.mode-btn:hover {
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+}
+
+.mode-btn.active {
+  background: var(--bg-tertiary);
+  border-color: var(--accent-dim);
+  color: var(--accent);
+}
+
+/* Add Buttons */
+.add-buttons {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.add-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 10px 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.add-btn .btn-icon {
+  font-size: 14px;
+  opacity: 0.7;
+}
+
+.add-btn:hover {
+  background: var(--bg-primary);
+  border-color: var(--accent-dim);
+  color: var(--text-primary);
+}
+
+.add-btn:hover .btn-icon {
+  opacity: 1;
+  color: var(--accent);
+}
+
+.add-btn:active {
+  background: var(--accent-dim);
+}
+
+/* Delete Button */
+.delete-btn {
+  width: 100%;
+  background: transparent;
+  border: 1px solid rgba(180, 60, 60, 0.3);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.delete-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.delete-btn:not(:disabled):hover {
+  background: rgba(180, 60, 60, 0.15);
+  border-color: rgba(180, 60, 60, 0.5);
+  color: #c44;
+}
+
+/* Export Buttons */
+.export-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.export-btn {
+  flex: 1;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.export-btn:hover {
+  background: var(--bg-primary);
+  border-color: var(--accent-dim);
+  color: var(--text-primary);
+}
+
+.export-btn:active {
+  background: var(--accent-dim);
+}
+
+/* Position display */
+#prism-info .position {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  #ui-overlay {
+    padding: 20px;
+  }
+  
+  #info-panel {
+    top: 20px;
+    right: 20px;
+    width: 180px;
+    padding: 16px;
+  }
+  
+  #header h1 {
+    font-size: 22px;
+  }
+  
+  #controls-hint {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+}

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Prism Light Simulator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="canvas"></canvas>
+      <div id="ui-overlay">
+        <header id="header">
+          <h1>Prism</h1>
+          <span class="subtitle">Light Installation Simulator</span>
+        </header>
+        <div id="info-panel">
+          <div class="panel-section">
+            <h3>Selected Prism</h3>
+            <div id="prism-info">
+              <span class="label">None selected</span>
+            </div>
+          </div>
+          <div class="panel-section">
+            <h3>Convergence</h3>
+            <div id="convergence-meter">
+              <div class="meter-bar"><div class="meter-fill" id="convergence-fill"></div></div>
+              <span id="convergence-value">0%</span>
+            </div>
+          </div>
+        </div>
+        <div id="controls-hint">
+          <span>Orbit: drag</span>
+          <span>Rotate prism: click + drag on prism</span>
+          <span>Press M to toggle mode</span>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
